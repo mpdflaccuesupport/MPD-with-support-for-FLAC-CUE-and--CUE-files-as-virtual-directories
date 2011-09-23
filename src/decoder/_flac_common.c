@@ -27,6 +27,10 @@
 #include "flac_pcm.h"
 #include "audio_check.h"
 
+#ifdef HAVE_CUE /* libcue */
+#include "../cue/cue_tag.h"
+#endif
+
 #include <glib.h>
 
 #include <assert.h>
@@ -240,3 +244,149 @@ flac_common_write(struct flac_data *data, const FLAC__Frame * frame,
 
 	return FLAC__STREAM_DECODER_WRITE_STATUS_CONTINUE;
 }
+
+
+#if defined(FLAC_API_VERSION_CURRENT) && FLAC_API_VERSION_CURRENT > 7
+
+char*
+flac_cue_track(	const char* pathname,
+		const unsigned int tnum)
+{
+	FLAC__bool success;
+	FLAC__StreamMetadata* cs;
+
+	success = FLAC__metadata_get_cuesheet(pathname, &cs);
+	if (!success)
+		return NULL;
+
+	assert(cs != NULL);
+
+	if (cs->data.cue_sheet.num_tracks <= 1)
+	{
+		FLAC__metadata_object_delete(cs);
+		return NULL;
+	}
+
+	if (tnum > 0 && tnum < cs->data.cue_sheet.num_tracks)
+	{
+		char* track = g_strdup_printf("track_%03u.flac", tnum);
+
+		FLAC__metadata_object_delete(cs);
+
+		return track;
+	}
+	else
+	{
+		FLAC__metadata_object_delete(cs);
+		return NULL;
+	}
+}
+
+
+unsigned int
+flac_vtrack_tnum(const char* fname)
+{
+	/* find last occurrence of '_' in fname
+	 * which is hopefully something like track_xxx.flac
+	 * another/better way would be to use tag struct
+	 */
+	char* ptr = strrchr(fname, '_');
+	if (ptr == NULL)
+		return 0;
+
+	// copy ascii tracknumber to int
+	return (unsigned int)strtol(++ptr, NULL, 10);
+}
+
+
+ struct tag *
+flac_cue_tag_load(const char *file)
+{
+	struct tag* tag = NULL;
+	char* char_tnum = NULL;
+	char* ptr = NULL;
+	unsigned int tnum = 0;
+	unsigned int sample_rate = 0;
+	FLAC__uint64 track_time = 0;
+#ifdef HAVE_CUE /* libcue */
+	FLAC__StreamMetadata* vc;
+	char* cs_filename;
+	FILE* cs_file;
+#endif /* libcue */
+	FLAC__StreamMetadata* si = FLAC__metadata_object_new(FLAC__METADATA_TYPE_STREAMINFO);
+	FLAC__StreamMetadata* cs;
+
+	tnum = flac_vtrack_tnum(file);
+	char_tnum = g_strdup_printf("%u", tnum);
+
+	ptr = strrchr(file, '/');
+	*ptr = '\0';
+
+#ifdef HAVE_CUE /* libcue */
+	if (FLAC__metadata_get_tags(file, &vc))
+	{
+		for (unsigned i = 0; i < vc->data.vorbis_comment.num_comments;
+		     i++)
+		{
+			if ((ptr = (char*)vc->data.vorbis_comment.comments[i].entry) != NULL)
+			{
+				if (g_ascii_strncasecmp(ptr, "cuesheet", 8) == 0)
+				{
+					while (*(++ptr) != '=');
+					tag = cue_tag_string(   ++ptr,
+								tnum);
+				}
+			}
+		}
+
+		FLAC__metadata_object_delete(vc);
+	}
+
+	if (tag == NULL) {
+		cs_filename = g_strconcat(file, ".cue", NULL);
+
+		cs_file = fopen(cs_filename, "rt");
+		g_free(cs_filename);
+
+		if (cs_file != NULL) {
+			tag = cue_tag_file(cs_file, tnum);
+			fclose(cs_file);
+		}
+	}
+#endif /* libcue */
+
+	if (tag == NULL)
+		tag = flac_tag_load(file, char_tnum);
+
+	if (char_tnum != NULL) {
+		tag_add_item(tag, TAG_TRACK, char_tnum);
+		g_free(char_tnum);
+	}
+
+	if (FLAC__metadata_get_streaminfo(file, si))
+	{
+		sample_rate = si->data.stream_info.sample_rate;
+		FLAC__metadata_object_delete(si);
+	}
+
+	if (FLAC__metadata_get_cuesheet(file, &cs))
+	{
+		if (cs->data.cue_sheet.tracks != NULL
+				&& (tnum <= cs->data.cue_sheet.num_tracks - 1))
+		{
+			track_time = cs->data.cue_sheet.tracks[tnum].offset
+				- cs->data.cue_sheet.tracks[tnum - 1].offset;
+		}
+		FLAC__metadata_object_delete(cs);
+	}
+
+	if (sample_rate != 0)
+	{
+		tag->time = (unsigned int)(track_time/sample_rate);
+	}
+
+	return tag;
+}
+
+
+#endif /* FLAC_API_VERSION_CURRENT >= 7 */

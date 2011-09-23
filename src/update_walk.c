@@ -47,6 +47,8 @@
 #include <stdlib.h>
 #include <errno.h>
 
+#include <stdio.h>
+
 static bool walk_discard;
 static bool modified;
 
@@ -493,8 +495,13 @@ update_container_file(	struct directory* directory,
 {
 	char* vtrack = NULL;
 	unsigned int tnum = 0;
+	//	char *suffix=NULL;
+	//	char *container_filename=NULL;
 	char* pathname = map_directory_child_fs(directory, name);
 	struct directory* contdir = dirvec_find(&directory->children, name);
+
+	//	if(pathname != NULL)
+	//	suffix = uri_get_suffix(pathname);
 
 	// directory exists already
 	if (contdir != NULL)
@@ -518,19 +525,26 @@ update_container_file(	struct directory* directory,
 	contdir = make_subdir(directory, name);
 	contdir->mtime = st->st_mtime;
 	contdir->device = DEVICE_CONTAINER;
+	
 
-	while ((vtrack = plugin->container_scan(pathname, ++tnum)) != NULL)
-	{
-		struct song* song = song_file_new(vtrack, contdir);
-		char *child_path_fs;
+	while ((vtrack = plugin->container_scan(pathname, ++tnum)) != NULL) {
 
-		// shouldn't be necessary but it's there..
-		song->mtime = st->st_mtime;
+	  struct song* song = song_file_new(vtrack, contdir);
+	  char *child_path_fs;
 
-		child_path_fs = map_directory_child_fs(contdir, vtrack);
+	  // shouldn't be necessary but it's there..
+	  song->mtime = st->st_mtime;
 
-		song->tag = plugin->tag_dup(child_path_fs);
-		g_free(child_path_fs);
+	  child_path_fs = map_directory_child_fs(contdir, vtrack);
+
+	  song->tag = plugin->container_track_tag_dup(child_path_fs,tnum);
+	  if ( plugin -> container_track_times != NULL) {
+	    song->start_ms = plugin -> container_track_times(child_path_fs,tnum,0);
+	    song->end_ms = plugin -> container_track_times(child_path_fs,tnum,1);
+	  }
+//         song->tag->time = (song->end_ms - song->start_ms) / 1000;
+
+        g_free(child_path_fs);
 
 		songvec_add(&contdir->songs, song);
 

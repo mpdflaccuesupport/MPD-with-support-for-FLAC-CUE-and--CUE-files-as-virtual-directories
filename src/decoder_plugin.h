@@ -95,6 +95,9 @@ struct decoder_plugin {
 	 */
 	char* (*container_scan)(const char *path_fs, const unsigned int tnum);
 
+	struct tag *(*container_track_tag_dup)(const char *path_fs, const unsigned int tnum);
+        long  (*container_track_times)(const char* pathname,const unsigned int tnum, int flag); 
+
 	/* last element in these arrays must always be a NULL: */
 	const char *const*suffixes;
 	const char *const*mime_types;

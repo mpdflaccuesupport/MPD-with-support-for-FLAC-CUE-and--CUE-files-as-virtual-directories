@@ -548,6 +548,7 @@ endif
 if HAVE_MODPLUG
 libmodplug_decoder_plugin_a_SOURCES = src/decoder/modplug_decoder_plugin.c
 libmodplug_decoder_plugin_a_CFLAGS = $(src_mpd_CFLAGS) $(MODPLUG_CFLAGS)
+ src/decoder/cue_decoder_plugin.c
 libmodplug_decoder_plugin_a_CPPFLAGS = $(src_mpd_CPPFLAGS)
 noinst_LIBRARIES += libmodplug_decoder_plugin.a
 DECODER_LIBS += libmodplug_decoder_plugin.a $(MODPLUG_LIBS)
@@ -632,7 +633,8 @@ endif
 endif
 
 if HAVE_CUE
-DECODER_SRC += src/cue/cue_tag.c
+DECODER_SRC += src/cue/cue_tag.c \
+               src/decoder/cue_decoder_plugin.c
 endif
 
 #

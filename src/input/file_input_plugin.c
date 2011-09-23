@@ -29,6 +29,8 @@
 #include <errno.h>
 #include <string.h>
 #include <glib.h>
+#include <stdlib.h>
+#include <stdio.h>
 
 #undef G_LOG_DOMAIN
 #define G_LOG_DOMAIN "input_file"
@@ -58,12 +60,32 @@ input_file_open(const char *filename,
 		return NULL;
 
 	fd = open_cloexec(filename, O_RDONLY|O_BINARY, 0);
-	if (fd < 0) {
-		if (errno != ENOENT && errno != ENOTDIR)
-			g_set_error(error_r, file_quark(), errno,
-				    "Failed to open \"%s\": %s",
-				    filename, g_strerror(errno));
-		return NULL;
+        if (fd < 0)  {
+		// the filename doesn't exist	
+		// try and open uri as if it were a track inside a container
+		char* pathname = NULL;
+		unsigned tnum;
+
+		pathname = g_strdup(filename);
+		remove_suffix(pathname,'/');
+
+		tnum = cue_vtrack_tnum(filename);
+		if ( tnum == 0 )
+			tnum=1; // use filename from first track of cue file if no track found 
+			
+                if( g_str_has_suffix(pathname,".cue"))
+                    pathname=cue_locate_audio_container_file(pathname,tnum) ;
+
+		fd = open_cloexec(pathname, O_RDONLY|O_BINARY, 0);
+		g_free(pathname);
+
+		if (fd < 0) {
+			if (errno != ENOENT && errno != ENOTDIR)
+				g_set_error(error_r, file_quark(), errno,
+						"Failed to open \"%s\": %s",
+						filename, g_strerror(errno));
+			return NULL;
+		}
 	}
 
 	ret = fstat(fd, &st);

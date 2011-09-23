@@ -29,6 +29,7 @@
 
 #include <string.h>
 
+extern const struct decoder_plugin cue_decoder_plugin;
 extern const struct decoder_plugin mad_decoder_plugin;
 extern const struct decoder_plugin mpg123_decoder_plugin;
 extern const struct decoder_plugin vorbis_decoder_plugin;
@@ -49,6 +50,9 @@ extern const struct decoder_plugin ffmpeg_decoder_plugin;
 extern const struct decoder_plugin gme_decoder_plugin;
 
 const struct decoder_plugin *const decoder_plugins[] = {
+#ifdef HAVE_CUE 
+	&cue_decoder_plugin,
+#endif
 #ifdef HAVE_MAD
 	&mad_decoder_plugin,
 #endif

@@ -126,7 +126,7 @@ decoder_command_finished(struct decoder *decoder)
 
 	if (decoder->initial_seek_running) {
 		assert(!decoder->seeking);
-		assert(decoder->chunk == NULL);
+//		assert(decoder->chunk == NULL);
 		assert(music_pipe_empty(dc->pipe));
 
 		decoder->initial_seek_running = false;

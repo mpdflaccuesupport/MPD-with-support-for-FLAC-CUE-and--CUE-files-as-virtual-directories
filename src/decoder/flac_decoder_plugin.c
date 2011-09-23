@@ -26,6 +26,14 @@
 #include "_ogg_common.h"
 #endif
 
+#ifdef HAVE_CUE /* libcue */
+
+#include <libcue/libcue.h>
+
+#include "../cue/cue_tag.h"
+
+#endif
+
 #include <glib.h>
 
 #include <assert.h>
@@ -33,6 +41,48 @@
 
 #include <sys/stat.h>
 #include <sys/types.h>
+
+
+long flac_container_track_times(const char* pathname,	const unsigned int tnum, int flag)
+{
+
+    #if defined(FLAC_API_VERSION_CURRENT) && FLAC_API_VERSION_CURRENT > 7
+
+    FLAC__uint64 cs_time = 0;
+    FLAC__StreamMetadata* cs = NULL;
+
+
+    if (0 == strncmp(".flac",pathname+strlen(pathname)-5,5)) { // hurray for no bounds-checking!
+            cs = FLAC__metadata_object_new(FLAC__METADATA_TYPE_CUESHEET);
+
+            FLAC__metadata_get_cuesheet(pathname, &cs);
+
+            if (cs != NULL)
+            {
+                    if (cs->data.cue_sheet.tracks != NULL
+                                    && (tnum <= cs->data.cue_sheet.num_tracks - 1))
+                    {
+                        if ( flag ==0 ) {
+                            cs_time = cs->data.cue_sheet.tracks[tnum - 1].offset*1000.0/588.0/75.0;
+                        } else {
+                            cs_time = cs->data.cue_sheet.tracks[tnum].offset*1000.0/588.0/75.0;
+                        }
+                    }
+
+                    FLAC__metadata_object_delete(cs);
+                    return cs_time;
+            }
+            else
+            {
+	      //g_free(pathname);
+                    return 0;
+            }
+    }
+
+#endif /* FLAC_API_VERSION_CURRENT >= 7 */
+    return 0;
+
+}
 
 /* this code was based on flac123, from flac-tools */
 
@@ -211,11 +261,30 @@ flac_write_cb(const FLAC__StreamDecoder *dec, const FLAC__Frame *frame,
 	return flac_common_write(data, frame, buf, nbytes);
 }
 
+
 static struct tag *
 flac_tag_dup(const char *file)
 {
-	return flac_tag_load(file, NULL);
+
+#if defined(FLAC_API_VERSION_CURRENT) && FLAC_API_VERSION_CURRENT > 7
+		struct stat st;
+
+		if (stat(file, &st) < 0)
+			return flac_cue_tag_load(file);
+		else
+#endif /* FLAC_API_VERSION_CURRENT >= 7 */
+			return flac_tag_load(file, NULL);
+
 }
+
+#if defined(FLAC_API_VERSION_CURRENT) && FLAC_API_VERSION_CURRENT > 7
+struct tag *flac_tag_track_dup(const char* pathname,const unsigned int tnum) 
+{
+        assert(tnum ==tnum); // get rid of unused warning 
+  
+        flac_tag_dup(pathname);
+}
+#endif /* FLAC_API_VERSION_CURRENT >= 7 */
 
 /**
  * Some glue code around FLAC__stream_decoder_new().
@@ -495,4 +564,9 @@ const struct decoder_plugin flac_decoder_plugin = {
 	.tag_dup = flac_tag_dup,
 	.suffixes = flac_suffixes,
 	.mime_types = flac_mime_types,
+#if defined(FLAC_API_VERSION_CURRENT) && FLAC_API_VERSION_CURRENT > 7
+	.container_scan = flac_cue_track,
+        .container_track_tag_dup =flac_tag_track_dup,
+        .container_track_times=flac_container_track_times
+#endif /* FLAC_API_VERSION_CURRENT >= 7 */
 };
